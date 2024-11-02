@@ -1,0 +1,87 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: ./docker/app/Dockerfile
+    image: 'chitchat.app'
+    entrypoint: /usr/src/chitchat/docker/app/server-entrypoint.sh
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    container_name: 'chitchat.app'
+    tty: true
+    volumes:
+      - ./app:/usr/src/chitchat/app
+      - ./app/static:/usr/src/chitchat/app/static
+      - ./app/media:/usr/src/chitchat/app/media
+    depends_on:
+      - db
+      - redis
+
+  bot:
+    build:
+      context: .
+      dockerfile: ./docker/app/Dockerfile
+    image: 'chitchat.bot'
+    command: ["python", "main_bot.py"]
+    container_name: 'chitchat.bot'
+    depends_on:
+      - app
+
+  redis:
+    image: redis:7
+    container_name: 'chitchat.redis'
+    env_file:
+      - .env/.env.redis
+    volumes:
+      - chitchat-redis:/data
+    restart: on-failure
+    expose:
+      - "6379"
+
+  db:
+    image: postgres:16
+    container_name: 'chitchat.db'
+    volumes:
+      - db_data:/var/lib/postgresql/data/
+    env_file:
+      - .env/.env.db
+    expose:
+      - "5432"
+
+  celery:
+    build:
+      context: .
+      dockerfile: ./docker/app/Dockerfile
+    image: 'chitchat.celery'
+    command: ["celery", "-A", "core.celery", "worker", "--loglevel=info"]
+    container_name: 'chitchat.celery'
+    environment:
+      - PYTHONPATH=/usr/src/chitchat/app
+    tty: true
+    volumes:
+      - ./app:/usr/src/chitchat/app
+      - ./app/static:/usr/src/chitchat/app/static
+      - ./app/media:/usr/src/chitchat/app/media
+    depends_on:
+      - app
+      - redis
+
+  nginx:
+    build:
+      context: .
+      dockerfile: ./docker/nginx/Dockerfile
+    image: 'chitchat.nginx'
+    restart: always
+    volumes:
+      - ./app/static:/usr/src/chitchat/app/static
+      - ./app/media:/usr/src/chitchat/app/media
+    container_name: 'chitchat.nginx'
+    ports:
+      - 8000:80
+    depends_on:
+      - app
+
+volumes:
+  db_data: 
+    driver: local
+  chitchat-redis:
+    driver: local
